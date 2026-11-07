@@ -74,7 +74,8 @@ class TestWallpaper(unittest.TestCase):
             # Test live preview updating with _set_dimensions
             dlg._set_dimensions(1920, 1080)
             self.assertIsNotNone(dlg.img_preview.get_pixbuf())
-            self.assertIn("1920 × 1080 px", dlg.lbl_preview_info.get_text())
+            self.assertIn("1920 × 1080", dlg.lbl_legend_wallpaper.get_text())
+            self.assertIn("1366 × 768", dlg.lbl_legend_screen.get_text())
 
             # Test stepping with aspect locked
             dlg._step_width(50)

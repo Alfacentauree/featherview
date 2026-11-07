@@ -86,10 +86,10 @@ class SetWallpaperDialog(Gtk.Dialog):
         preview_frame = Gtk.Frame()
         preview_frame.set_shadow_type(Gtk.ShadowType.ETCHED_IN)
         preview_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        preview_box.set_margin_top(12)
-        preview_box.set_margin_bottom(12)
-        preview_box.set_margin_start(12)
-        preview_box.set_margin_end(12)
+        preview_box.set_margin_top(10)
+        preview_box.set_margin_bottom(10)
+        preview_box.set_margin_start(10)
+        preview_box.set_margin_end(10)
 
         # Monitor display bezel container
         monitor_bezel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -100,9 +100,26 @@ class SetWallpaperDialog(Gtk.Dialog):
         monitor_bezel.pack_start(self.img_preview, True, True, 0)
         preview_box.pack_start(monitor_bezel, True, True, 0)
 
-        self.lbl_preview_info = Gtk.Label()
-        self.lbl_preview_info.set_halign(Gtk.Align.CENTER)
-        preview_box.pack_start(self.lbl_preview_info, False, False, 0)
+        # Legend Box showing Screen Frame Line vs Adjusted Wallpaper
+        legend_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        legend_box.set_halign(Gtk.Align.CENTER)
+
+        self.lbl_legend_screen = Gtk.Label(label=f"🟦 Screen Frame Line ({self.screen_w} × {self.screen_h})")
+        self.lbl_legend_screen.get_style_context().add_class("legend-pill")
+        self.lbl_legend_screen.get_style_context().add_class("legend-screen")
+        legend_box.pack_start(self.lbl_legend_screen, False, False, 0)
+
+        self.lbl_legend_wallpaper = Gtk.Label(label="🟧 Adjusted Wallpaper: —")
+        self.lbl_legend_wallpaper.get_style_context().add_class("legend-pill")
+        self.lbl_legend_wallpaper.get_style_context().add_class("legend-wallpaper")
+        legend_box.pack_start(self.lbl_legend_wallpaper, False, False, 0)
+
+        preview_box.pack_start(legend_box, False, False, 0)
+
+        # Live Crop / Border Status Label
+        self.lbl_crop_status = Gtk.Label()
+        self.lbl_crop_status.set_halign(Gtk.Align.CENTER)
+        preview_box.pack_start(self.lbl_crop_status, False, False, 0)
 
         name_lbl = Gtk.Label(label=f"{os.path.basename(image_path)} (Original: {self.orig_w} × {self.orig_h} px)")
         name_lbl.get_style_context().add_class("dim-label")
@@ -350,9 +367,34 @@ class SetWallpaperDialog(Gtk.Dialog):
         rw, rh = target_w // gcd, target_h // gcd
         ratio_str = f"{rw}:{rh}" if rw < 35 and rh < 35 else f"{target_w/target_h:.2f}:1"
 
-        self.lbl_preview_info.set_markup(
-            f"<b>Desktop Preview:</b> <span color='#38bdf8'><b>{target_w} × {target_h} px</b></span> ({ratio_str}) • <i>{style_title}</i>"
-        )
+        # Update legend labels
+        self.lbl_legend_wallpaper.set_text(f"🟧 Adjusted Wallpaper: {target_w} × {target_h}")
+
+        # Update live status comparing adjusted size vs screen frame
+        if target_w == self.screen_w and target_h == self.screen_h:
+            status_text = "<span color='#4ade80'><b>✓ Exact Fit:</b> Wallpaper matches your screen resolution 100%</span>"
+        elif target_w > self.screen_w or target_h > self.screen_h:
+            diffs = []
+            if target_w > self.screen_w:
+                diffs.append(f"+{target_w - self.screen_w}px width")
+            if target_h > self.screen_h:
+                diffs.append(f"+{target_h - self.screen_h}px height")
+            status_text = (
+                f"<span color='#f59e0b'><b>✂️ Cropping ({', '.join(diffs)}):</b> "
+                f"Areas outside the Cyan Screen Frame Line will be cropped</span>"
+            )
+        else:
+            diffs = []
+            if target_w < self.screen_w:
+                diffs.append(f"-{self.screen_w - target_w}px width")
+            if target_h < self.screen_h:
+                diffs.append(f"-{self.screen_h - target_h}px height")
+            status_text = (
+                f"<span color='#93c5fd'><b>🔲 Border Padding ({', '.join(diffs)}):</b> "
+                f"Selected border color fills inside Cyan Screen Line</span>"
+            )
+
+        self.lbl_crop_status.set_markup(status_text)
 
         pixbuf = self._render_preview_pixbuf(target_w, target_h, style, hex_color)
         if pixbuf:
@@ -361,71 +403,136 @@ class SetWallpaperDialog(Gtk.Dialog):
     def _render_preview_pixbuf(
         self, target_w: int, target_h: int, style: str, hex_color: str
     ) -> Optional[GdkPixbuf.Pixbuf]:
-        box_w = 300
-        box_h = 168
+        canvas_w = 380
+        canvas_h = 230
+        max_box_w = 320
+        max_box_h = 175
 
-        target_ratio = float(target_w) / float(target_h)
-        if target_ratio >= (box_w / box_h):
-            pw = box_w
-            ph = max(40, int(round(box_w / target_ratio)))
-        else:
-            ph = box_h
-            pw = max(40, int(round(box_h * target_ratio)))
+        # Compute scale so BOTH Screen Frame Line and Wallpaper fit inside preview canvas
+        bound_w = max(self.screen_w, target_w)
+        bound_h = max(self.screen_h, target_h)
+        scale = min(max_box_w / float(bound_w), max_box_h / float(bound_h))
+
+        frame_w = max(10, int(round(self.screen_w * scale)))
+        frame_h = max(10, int(round(self.screen_h * scale)))
+        frame_x = (canvas_w - frame_w) // 2
+        frame_y = (canvas_h - frame_h) // 2
+
+        wall_w = max(10, int(round(target_w * scale)))
+        wall_h = max(10, int(round(target_h * scale)))
+        wall_x = (canvas_w - wall_w) // 2
+        wall_y = (canvas_h - wall_h) // 2
 
         if not self.cached_source_img:
-            return create_thumbnail(self.image_path, max_size=max(pw, ph))
+            return create_thumbnail(self.image_path, max_size=max(frame_w, frame_h))
 
         try:
-            from PIL import Image
+            from PIL import Image, ImageDraw
 
-            canvas = Image.new("RGB", (pw, ph), hex_color)
+            # Base desktop canvas
+            canvas = Image.new("RGBA", (canvas_w, canvas_h), (14, 14, 18, 255))
+
+            # 1. Render Wallpaper content into (wall_w, wall_h)
             orig_w, orig_h = self.orig_w, self.orig_h
+            wall_img = Image.new("RGBA", (wall_w, wall_h), hex_color)
 
             if style == "zoom":
-                scale = max(pw / orig_w, ph / orig_h)
-                sw = max(1, int(round(orig_w * scale)))
-                sh = max(1, int(round(orig_h * scale)))
+                sc = max(wall_w / orig_w, wall_h / orig_h)
+                sw = max(1, int(round(orig_w * sc)))
+                sh = max(1, int(round(orig_h * sc)))
                 resized = self.cached_source_img.resize((sw, sh), Image.Resampling.BILINEAR)
-                left = (sw - pw) // 2
-                top = (sh - ph) // 2
-                cropped = resized.crop((left, top, left + pw, top + ph))
-                canvas.paste(cropped, (0, 0))
+                left = (sw - wall_w) // 2
+                top = (sh - wall_h) // 2
+                cropped = resized.crop((left, top, left + wall_w, top + wall_h))
+                wall_img.paste(cropped, (0, 0))
 
             elif style == "scaled":
-                scale = min(pw / orig_w, ph / orig_h)
-                sw = max(1, int(round(orig_w * scale)))
-                sh = max(1, int(round(orig_h * scale)))
+                sc = min(wall_w / orig_w, wall_h / orig_h)
+                sw = max(1, int(round(orig_w * sc)))
+                sh = max(1, int(round(orig_h * sc)))
                 resized = self.cached_source_img.resize((sw, sh), Image.Resampling.BILINEAR)
-                canvas.paste(resized, ((pw - sw) // 2, (ph - sh) // 2))
+                wall_img.paste(resized, ((wall_w - sw) // 2, (wall_h - sh) // 2))
 
             elif style == "centered":
-                scale_x = pw / target_w
-                scale_y = ph / target_h
-                sw = max(1, int(round(self.orig_w * scale_x)))
-                sh = max(1, int(round(self.orig_h * scale_y)))
-                if sw > pw or sh > ph:
+                sc_x = wall_w / target_w
+                sc_y = wall_h / target_h
+                sw = max(1, int(round(orig_w * sc_x)))
+                sh = max(1, int(round(orig_h * sc_y)))
+                if sw > wall_w or sh > wall_h:
                     resized = self.cached_source_img.resize((sw, sh), Image.Resampling.BILINEAR)
-                    left = max(0, (sw - pw) // 2)
-                    top = max(0, (sh - ph) // 2)
-                    cropped = resized.crop((left, top, min(sw, left + pw), min(sh, top + ph)))
-                    canvas.paste(cropped, (0, 0))
+                    left = max(0, (sw - wall_w) // 2)
+                    top = max(0, (sh - wall_h) // 2)
+                    cropped = resized.crop((left, top, min(sw, left + wall_w), min(sh, top + wall_h)))
+                    wall_img.paste(cropped, (0, 0))
                 else:
                     resized = self.cached_source_img.resize((sw, sh), Image.Resampling.BILINEAR)
-                    canvas.paste(resized, ((pw - sw) // 2, (ph - sh) // 2))
+                    wall_img.paste(resized, ((wall_w - sw) // 2, (wall_h - sh) // 2))
 
             else:  # spanned / stretch
-                resized = self.cached_source_img.resize((pw, ph), Image.Resampling.BILINEAR)
-                canvas.paste(resized, (0, 0))
+                resized = self.cached_source_img.resize((wall_w, wall_h), Image.Resampling.BILINEAR)
+                wall_img.paste(resized, (0, 0))
 
-            raw_bytes = GLib.Bytes.new(canvas.tobytes())
+            # Paste wallpaper onto preview canvas
+            canvas.paste(wall_img, (wall_x, wall_y))
+
+            # 2. Dim everything outside the Screen Frame Line
+            overlay = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+            d_ov = ImageDraw.Draw(overlay)
+            d_ov.rectangle([0, 0, canvas_w, frame_y], fill=(0, 0, 0, 160))
+            d_ov.rectangle([0, frame_y + frame_h, canvas_w, canvas_h], fill=(0, 0, 0, 160))
+            d_ov.rectangle([0, frame_y, frame_x, frame_y + frame_h], fill=(0, 0, 0, 160))
+            d_ov.rectangle([frame_x + frame_w, frame_y, canvas_w, frame_y + frame_h], fill=(0, 0, 0, 160))
+            canvas = Image.alpha_composite(canvas, overlay)
+
+            # 3. Draw outlines
+            draw = ImageDraw.Draw(canvas)
+
+            # Amber line for adjusted wallpaper if different from screen frame
+            if abs(wall_w - frame_w) > 2 or abs(wall_h - frame_h) > 2:
+                draw.rectangle(
+                    [wall_x, wall_y, wall_x + wall_w, wall_y + wall_h],
+                    outline=(245, 158, 11, 230),
+                    width=1,
+                )
+
+            # Cyan Screen Frame Line (The Physical Monitor Display Boundary)
+            draw.rectangle(
+                [frame_x, frame_y, frame_x + frame_w, frame_y + frame_h],
+                outline=(56, 189, 248, 255),
+                width=2,
+            )
+
+            # High-contrast corner crop brackets on screen frame
+            c_len = 10
+            corners = [
+                (frame_x, frame_y, 1, 1),
+                (frame_x + frame_w, frame_y, -1, 1),
+                (frame_x, frame_y + frame_h, 1, -1),
+                (frame_x + frame_w, frame_y + frame_h, -1, -1),
+            ]
+            for cx, cy, dx, dy in corners:
+                draw.line([(cx, cy), (cx + dx * c_len, cy)], fill=(255, 255, 255, 255), width=2)
+                draw.line([(cx, cy), (cx, cy + dy * c_len)], fill=(255, 255, 255, 255), width=2)
+
+            # Screen Label text inside screen frame
+            try:
+                draw.text(
+                    (frame_x + 6, frame_y + 4),
+                    f"Screen: {self.screen_w}×{self.screen_h}",
+                    fill=(56, 189, 248, 255),
+                )
+            except Exception:
+                pass
+
+            raw_bytes = GLib.Bytes.new(canvas.convert("RGB").tobytes())
             return GdkPixbuf.Pixbuf.new_from_bytes(
                 raw_bytes,
                 GdkPixbuf.Colorspace.RGB,
                 False,
                 8,
-                pw,
-                ph,
-                pw * 3,
+                canvas_w,
+                canvas_h,
+                canvas_w * 3,
             )
         except Exception as e:
             print(f"[FeatherView] Preview render error: {e}")
