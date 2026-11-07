@@ -58,6 +58,41 @@ class TestWallpaper(unittest.TestCase):
         if current is not None:
             self.assertIsInstance(current, str)
 
+    def test_dialog_live_preview(self):
+        import gi
+        gi.require_version("Gtk", "3.0")
+        from gi.repository import Gtk
+        from featherview.dialogs import SetWallpaperDialog
+
+        with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
+            img = Image.new("RGB", (640, 480), (30, 90, 150))
+            img.save(tmp.name)
+
+            parent = Gtk.Window()
+            dlg = SetWallpaperDialog(parent, tmp.name)
+
+            # Test live preview updating with _set_dimensions
+            dlg._set_dimensions(1920, 1080)
+            self.assertIsNotNone(dlg.img_preview.get_pixbuf())
+            self.assertIn("1920 × 1080 px", dlg.lbl_preview_info.get_text())
+
+            # Test stepping with aspect locked
+            dlg._step_width(50)
+            self.assertEqual(dlg.spin_w.get_value(), 1970)
+
+            # Test stepping with aspect unlocked
+            dlg.chk_aspect.set_active(False)
+            dlg._step_height(-50)
+            self.assertEqual(dlg.spin_h.get_value(), 1428)
+
+            # Test style live preview
+            dlg.radio_scaled.set_active(True)
+            dlg._update_live_preview()
+            self.assertIsNotNone(dlg.img_preview.get_pixbuf())
+
+            dlg.destroy()
+            parent.destroy()
+
 
 if __name__ == "__main__":
     unittest.main()

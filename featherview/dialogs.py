@@ -1,5 +1,6 @@
 """Dialog windows for image properties, keyboard shortcuts, wallpaper settings, and confirmations."""
 
+import math
 import os
 from typing import Any, Callable, Dict, Optional
 
@@ -7,7 +8,8 @@ import gi
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 gi.require_version("GdkPixbuf", "2.0")
-from gi.repository import Gdk, GdkPixbuf, Gtk
+gi.require_version("GLib", "2.0")
+from gi.repository import Gdk, GdkPixbuf, GLib, Gtk
 
 from . import __app_name__, __version__
 from .loader import create_thumbnail
@@ -54,6 +56,15 @@ class SetWallpaperDialog(Gtk.Dialog):
         self.aspect_ratio = float(self.orig_w) / float(self.orig_h) if self.orig_h > 0 else 1.777
         self._syncing_dims = False
 
+        # Cache source image in memory for ultra-fast instantaneous live preview rendering
+        self.cached_source_img = None
+        try:
+            from PIL import Image
+            with Image.open(image_path) as im:
+                self.cached_source_img = im.convert("RGB")
+        except Exception:
+            pass
+
         # Action Buttons
         self.add_button("Cancel", Gtk.ResponseType.CANCEL)
         apply_btn = self.add_button("Apply Wallpaper", Gtk.ResponseType.OK)
@@ -71,7 +82,7 @@ class SetWallpaperDialog(Gtk.Dialog):
         content.set_margin_bottom(16)
         scrolled.add(content)
 
-        # 1. Image Preview Frame
+        # 1. Live Dynamic Image Preview Frame
         preview_frame = Gtk.Frame()
         preview_frame.set_shadow_type(Gtk.ShadowType.ETCHED_IN)
         preview_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
@@ -80,14 +91,20 @@ class SetWallpaperDialog(Gtk.Dialog):
         preview_box.set_margin_start(12)
         preview_box.set_margin_end(12)
 
-        thumb = create_thumbnail(image_path, max_size=180)
-        if thumb:
-            img_widget = Gtk.Image.new_from_pixbuf(thumb)
-        else:
-            img_widget = Gtk.Image.new_from_icon_name("preferences-desktop-wallpaper", Gtk.IconSize.DIALOG)
-        preview_box.pack_start(img_widget, True, True, 0)
+        # Monitor display bezel container
+        monitor_bezel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        monitor_bezel.get_style_context().add_class("monitor-frame")
+        monitor_bezel.set_halign(Gtk.Align.CENTER)
 
-        name_lbl = Gtk.Label(label=f"{os.path.basename(image_path)} ({self.orig_w} × {self.orig_h} px)")
+        self.img_preview = Gtk.Image()
+        monitor_bezel.pack_start(self.img_preview, True, True, 0)
+        preview_box.pack_start(monitor_bezel, True, True, 0)
+
+        self.lbl_preview_info = Gtk.Label()
+        self.lbl_preview_info.set_halign(Gtk.Align.CENTER)
+        preview_box.pack_start(self.lbl_preview_info, False, False, 0)
+
+        name_lbl = Gtk.Label(label=f"{os.path.basename(image_path)} (Original: {self.orig_w} × {self.orig_h} px)")
         name_lbl.get_style_context().add_class("dim-label")
         name_lbl.set_ellipsize(3)  # PANGO_ELLIPSIZE_END
         preview_box.pack_start(name_lbl, False, False, 0)
@@ -251,22 +268,35 @@ class SetWallpaperDialog(Gtk.Dialog):
         color_box.pack_start(self.color_button, False, False, 0)
         content.pack_start(color_box, False, False, 0)
 
+        # Connect style & color change signals for real-time live preview update
+        self.radio_zoom.connect("toggled", lambda b: self._update_live_preview() if b.get_active() else None)
+        self.radio_scaled.connect("toggled", lambda b: self._update_live_preview() if b.get_active() else None)
+        self.radio_centered.connect("toggled", lambda b: self._update_live_preview() if b.get_active() else None)
+        self.radio_spanned.connect("toggled", lambda b: self._update_live_preview() if b.get_active() else None)
+        self.color_button.connect("color-set", lambda b: self._update_live_preview())
+
+        # Render initial dynamic preview
+        self._update_live_preview()
+
         self.connect("response", self._on_response)
         self.show_all()
 
     def _step_width(self, delta: int) -> None:
         val = self.spin_w.get_value()
         self.spin_w.set_value(max(100, min(10000, val + delta)))
+        self._update_live_preview()
 
     def _step_height(self, delta: int) -> None:
         val = self.spin_h.get_value()
         self.spin_h.set_value(max(100, min(10000, val + delta)))
+        self._update_live_preview()
 
     def _set_dimensions(self, width: int, height: int) -> None:
         self._syncing_dims = True
         self.spin_w.set_value(width)
         self.spin_h.set_value(height)
         self._syncing_dims = False
+        self._update_live_preview()
 
     def _on_width_changed(self, spin: Gtk.SpinButton) -> None:
         if self._syncing_dims:
@@ -276,6 +306,7 @@ class SetWallpaperDialog(Gtk.Dialog):
             new_h = int(round(spin.get_value() / self.aspect_ratio))
             self.spin_h.set_value(max(100, min(10000, new_h)))
             self._syncing_dims = False
+        self._update_live_preview()
 
     def _on_height_changed(self, spin: Gtk.SpinButton) -> None:
         if self._syncing_dims:
@@ -285,6 +316,120 @@ class SetWallpaperDialog(Gtk.Dialog):
             new_w = int(round(spin.get_value() * self.aspect_ratio))
             self.spin_w.set_value(max(100, min(10000, new_w)))
             self._syncing_dims = False
+        self._update_live_preview()
+
+    def _update_live_preview(self) -> None:
+        target_w = int(self.spin_w.get_value())
+        target_h = int(self.spin_h.get_value())
+        if target_w <= 0 or target_h <= 0:
+            return
+
+        # Determine style title
+        if self.radio_zoom.get_active():
+            style = "zoom"
+            style_title = "Zoom / Fill Screen"
+        elif self.radio_scaled.get_active():
+            style = "scaled"
+            style_title = "Fit to Screen (With Borders)"
+        elif self.radio_centered.get_active():
+            style = "centered"
+            style_title = "Centered (1:1 Native)"
+        else:
+            style = "spanned"
+            style_title = "Span / Stretch"
+
+        # Background color
+        rgba = self.color_button.get_rgba()
+        r = int(rgba.red * 255)
+        g = int(rgba.green * 255)
+        b = int(rgba.blue * 255)
+        hex_color = f"#{r:02x}{g:02x}{b:02x}"
+
+        # Aspect ratio string
+        gcd = math.gcd(target_w, target_h)
+        rw, rh = target_w // gcd, target_h // gcd
+        ratio_str = f"{rw}:{rh}" if rw < 35 and rh < 35 else f"{target_w/target_h:.2f}:1"
+
+        self.lbl_preview_info.set_markup(
+            f"<b>Desktop Preview:</b> <span color='#38bdf8'><b>{target_w} × {target_h} px</b></span> ({ratio_str}) • <i>{style_title}</i>"
+        )
+
+        pixbuf = self._render_preview_pixbuf(target_w, target_h, style, hex_color)
+        if pixbuf:
+            self.img_preview.set_from_pixbuf(pixbuf)
+
+    def _render_preview_pixbuf(
+        self, target_w: int, target_h: int, style: str, hex_color: str
+    ) -> Optional[GdkPixbuf.Pixbuf]:
+        box_w = 300
+        box_h = 168
+
+        target_ratio = float(target_w) / float(target_h)
+        if target_ratio >= (box_w / box_h):
+            pw = box_w
+            ph = max(40, int(round(box_w / target_ratio)))
+        else:
+            ph = box_h
+            pw = max(40, int(round(box_h * target_ratio)))
+
+        if not self.cached_source_img:
+            return create_thumbnail(self.image_path, max_size=max(pw, ph))
+
+        try:
+            from PIL import Image
+
+            canvas = Image.new("RGB", (pw, ph), hex_color)
+            orig_w, orig_h = self.orig_w, self.orig_h
+
+            if style == "zoom":
+                scale = max(pw / orig_w, ph / orig_h)
+                sw = max(1, int(round(orig_w * scale)))
+                sh = max(1, int(round(orig_h * scale)))
+                resized = self.cached_source_img.resize((sw, sh), Image.Resampling.BILINEAR)
+                left = (sw - pw) // 2
+                top = (sh - ph) // 2
+                cropped = resized.crop((left, top, left + pw, top + ph))
+                canvas.paste(cropped, (0, 0))
+
+            elif style == "scaled":
+                scale = min(pw / orig_w, ph / orig_h)
+                sw = max(1, int(round(orig_w * scale)))
+                sh = max(1, int(round(orig_h * scale)))
+                resized = self.cached_source_img.resize((sw, sh), Image.Resampling.BILINEAR)
+                canvas.paste(resized, ((pw - sw) // 2, (ph - sh) // 2))
+
+            elif style == "centered":
+                scale_x = pw / target_w
+                scale_y = ph / target_h
+                sw = max(1, int(round(self.orig_w * scale_x)))
+                sh = max(1, int(round(self.orig_h * scale_y)))
+                if sw > pw or sh > ph:
+                    resized = self.cached_source_img.resize((sw, sh), Image.Resampling.BILINEAR)
+                    left = max(0, (sw - pw) // 2)
+                    top = max(0, (sh - ph) // 2)
+                    cropped = resized.crop((left, top, min(sw, left + pw), min(sh, top + ph)))
+                    canvas.paste(cropped, (0, 0))
+                else:
+                    resized = self.cached_source_img.resize((sw, sh), Image.Resampling.BILINEAR)
+                    canvas.paste(resized, ((pw - sw) // 2, (ph - sh) // 2))
+
+            else:  # spanned / stretch
+                resized = self.cached_source_img.resize((pw, ph), Image.Resampling.BILINEAR)
+                canvas.paste(resized, (0, 0))
+
+            raw_bytes = GLib.Bytes.new(canvas.tobytes())
+            return GdkPixbuf.Pixbuf.new_from_bytes(
+                raw_bytes,
+                GdkPixbuf.Colorspace.RGB,
+                False,
+                8,
+                pw,
+                ph,
+                pw * 3,
+            )
+        except Exception as e:
+            print(f"[FeatherView] Preview render error: {e}")
+            return None
 
     def _on_response(self, dialog, response_id: int) -> None:
         if response_id == Gtk.ResponseType.OK:
