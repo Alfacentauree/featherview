@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e1e24" />
+      <stop offset="100%" stop-color="#0f0f12" />
+    </linearGradient>
+    <linearGradient id="primaryGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#2563eb" />
+    </linearGradient>
+    <linearGradient id="sunGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+    <linearGradient id="mountainGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#1d4ed8" />
+    </linearGradient>
+    <linearGradient id="featherGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a855f7" />
+      <stop offset="50%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#3b82f6" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.4" />
+    </filter>
+  </defs>
+
+  <!-- Base Rounded Card -->
+  <rect x="16" y="16" width="224" height="224" rx="48" fill="url(#bgGrad)" filter="url(#shadow)" stroke="#3f3f46" stroke-width="2"/>
+
+  <!-- Inner Frame with Aperture / Image View -->
+  <rect x="36" y="36" width="184" height="184" rx="36" fill="#18181b" stroke="url(#featherGrad)" stroke-width="3"/>
+
+  <!-- Sun / Moon in image -->
+  <circle cx="80" cy="86" r="18" fill="url(#sunGrad)"/>
+
+  <!-- Mountain Landscape Silhouettes -->
+  <path d="M40 186 L95 116 L140 168 L175 130 L216 186 Z" fill="url(#mountainGrad)" opacity="0.85"/>
+  <path d="M90 186 L130 142 L165 186 Z" fill="#60a5fa" opacity="0.6"/>
+
+  <!-- Sleek Feather Accent -->
+  <path d="M140 60 C180 60 210 90 200 135 C195 158 178 175 155 180 C170 160 172 135 160 115 C152 102 140 95 130 92 C135 80 138 68 140 60 Z" fill="url(#featherGrad)" opacity="0.9"/>
+  <path d="M140 60 C165 95 155 140 130 175" stroke="#ffffff" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.8"/>
+</svg>
