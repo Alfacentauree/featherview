@@ -14,13 +14,17 @@ mkdir -p "$BIN_DIR"
 mkdir -p "$DESKTOP_DIR"
 mkdir -p "$ICON_DIR"
 
-# 1. Create wrapper in ~/.local/bin
+# 1. Install binary to ~/.local/bin
 echo "--> Installing binary to $BIN_DIR/featherview"
-cat << EOF > "$BIN_DIR/featherview"
+if [ -f "$APP_DIR/dist/featherview" ]; then
+    cp "$APP_DIR/dist/featherview" "$BIN_DIR/featherview"
+else
+    cat << EOF > "$BIN_DIR/featherview"
 #!/usr/bin/env bash
 export PYTHONPATH="$APP_DIR:\$PYTHONPATH"
 exec python3 -m featherview.app "\$@"
 EOF
+fi
 chmod +x "$BIN_DIR/featherview"
 
 # 2. Install Desktop Icon

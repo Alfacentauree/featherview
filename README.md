@@ -60,6 +60,29 @@ Built with Python 3, GTK 3, and Cairo, **FeatherView** starts up in under **100m
 
 ---
 
+## 🔨 Compiling & Building
+
+FeatherView comes with an automated build system that compiles Python bytecode, generates a standalone single-file binary, a native C ELF binary, and a Debian `.deb` package.
+
+To compile everything, simply run:
+
+```bash
+cd /home/add/Desktop/Github/featherview
+./build.sh
+```
+
+This generates in the `dist/` folder:
+- **`dist/featherview`**: Standalone single-file executable (165 KB) with compressed bytecode and assets included.
+- **`dist/featherview-native`**: Native C ELF 64-bit binary launcher compiled with GCC.
+- **`dist/featherview_1.0.0_all.deb`**: Debian/Ubuntu/Linux Mint package.
+
+### Installing the compiled `.deb` package system-wide:
+```bash
+sudo dpkg -i dist/featherview_1.0.0_all.deb
+```
+
+---
+
 ## 🚀 Installation
 
 ### One-line Quick Install

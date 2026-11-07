@@ -55,6 +55,22 @@ class FeatherViewWindow(Gtk.ApplicationWindow):
         self.connect("destroy", self._on_destroy)
 
     def _load_styles(self) -> None:
+        try:
+            import pkgutil
+            css_data = pkgutil.get_data("featherview", "styles.css")
+            if css_data:
+                css_provider = Gtk.CssProvider()
+                css_provider.load_from_data(css_data)
+                Gtk.StyleContext.add_provider_for_screen(
+                    Gdk.Screen.get_default(),
+                    css_provider,
+                    Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
+                )
+                return
+        except Exception:
+            pass
+
+        # Fallback to local file path
         css_provider = Gtk.CssProvider()
         css_file = os.path.join(os.path.dirname(__file__), "styles.css")
         if os.path.exists(css_file):
