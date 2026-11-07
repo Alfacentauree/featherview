@@ -14,7 +14,11 @@ Built with Python 3, GTK 3, and Cairo, **FeatherView** starts up in under **100m
 - **🎞️ Asynchronous Thumbnail Filmstrip**: Fast, non-blocking preview bar at the bottom with instant jump and smooth auto-scrolling.
 - **🔄 Instant Transformations**: 90° Clockwise/Counter-Clockwise rotations, horizontal and vertical flips.
 - **🎬 Slideshow Mode**: Auto-advancing full-screen or windowed slideshow.
-- **🖥️ Desktop Wallpaper Integration**: One-click wallpaper setter supporting Cinnamon, GNOME, XFCE, MATE, KDE Plasma, and window managers.
+- **🖥️ Desktop Wallpaper Integration**:
+  - **Interactive Wallpaper Dialog**: Choose placement styles (**Fill / Zoom**, **Fit / Scaled**, **Centered**, or **Spanned**) with custom background border colors.
+  - **Quick Set Wallpaper**: One-click instant wallpaper setter.
+  - Accessible via dedicated HeaderBar button, right-click context menu, fullscreen overlay HUD, or keyboard shortcuts (`Ctrl+Shift+W` or `Ctrl+B`).
+  - Supports Cinnamon, GNOME, XFCE, MATE, KDE Plasma, and window managers (feh, nitrogen).
 - **📋 Clipboard Integration**: Copy any active image directly to system clipboard (`Ctrl+C`).
 - **ℹ️ EXIF & Properties Inspector**: Detailed breakdown of dimensions, megapixel count, aspect ratio, camera make/model, shutter speed, aperture, ISO, and focal length.
 - **🗑️ Safe File Management**: Move unwanted images straight to the desktop Trash bin with confirmation (`Delete`).
