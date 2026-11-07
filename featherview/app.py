@@ -14,7 +14,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk
 
 from . import __app_id__, __app_name__, __version__
 from .canvas import ImageCanvas
-from .dialogs import AboutDialog, ImagePropertiesDialog, ShortcutsDialog
+from .dialogs import AboutDialog, ImagePropertiesDialog, SetWallpaperDialog, ShortcutsDialog
 from .loader import ImageCollection, is_image_file, load_animation, load_pixbuf
 from .metadata import get_image_metadata
 from .thumbnails import ThumbnailStrip
@@ -84,6 +84,7 @@ class FeatherViewWindow(Gtk.ApplicationWindow):
             "thumbnails": self.toggle_thumbnails,
             "fullscreen": self.toggle_fullscreen,
             "set_wallpaper": self.set_as_wallpaper,
+            "quick_wallpaper": self.quick_set_wallpaper,
             "copy": self.copy_to_clipboard,
             "save_as": self.save_as_dialog,
             "delete": self.delete_current_image,
@@ -124,6 +125,7 @@ class FeatherViewWindow(Gtk.ApplicationWindow):
         self.canvas.on_next_requested = self.next_image
         self.canvas.on_prev_requested = self.prev_image
         self.canvas.on_toggle_fullscreen = self.toggle_fullscreen
+        self.canvas.on_context_menu = self._on_canvas_context_menu
         self.overlay.add(self.canvas)
 
         # Fullscreen Floating HUD Overlay
@@ -290,10 +292,62 @@ class FeatherViewWindow(Gtk.ApplicationWindow):
     def set_as_wallpaper(self) -> None:
         path = self.collection.current_path
         if not path:
+            self.show_notification("No image loaded to set as wallpaper", Gtk.MessageType.WARNING)
             return
-        success, msg = set_desktop_wallpaper(path)
+        SetWallpaperDialog(self, path, on_applied=self._on_wallpaper_applied)
+
+    def quick_set_wallpaper(self) -> None:
+        path = self.collection.current_path
+        if not path:
+            return
+        success, msg = set_desktop_wallpaper(path, style="zoom")
+        self._on_wallpaper_applied(success, msg)
+
+    def _on_wallpaper_applied(self, success: bool, msg: str) -> None:
         m_type = Gtk.MessageType.INFO if success else Gtk.MessageType.WARNING
         self.show_notification(msg, m_type)
+
+    def _on_canvas_context_menu(self, event: Gdk.EventButton) -> None:
+        path = self.collection.current_path
+        if not path:
+            return
+
+        menu = Gtk.Menu()
+
+        item_wall = Gtk.MenuItem(label="Set as Desktop Wallpaper...")
+        item_wall.connect("activate", lambda w: self.set_as_wallpaper())
+        menu.append(item_wall)
+
+        item_qwall = Gtk.MenuItem(label="Quick Set as Wallpaper (Fill Screen)")
+        item_qwall.connect("activate", lambda w: self.quick_set_wallpaper())
+        menu.append(item_qwall)
+
+        menu.append(Gtk.SeparatorMenuItem())
+
+        item_copy = Gtk.MenuItem(label="Copy Image (Ctrl+C)")
+        item_copy.connect("activate", lambda w: self.copy_to_clipboard())
+        menu.append(item_copy)
+
+        item_rot_cw = Gtk.MenuItem(label="Rotate Clockwise (R)")
+        item_rot_cw.connect("activate", lambda w: self.canvas.rotate_cw())
+        menu.append(item_rot_cw)
+
+        item_rot_ccw = Gtk.MenuItem(label="Rotate Counter-Clockwise (Shift+R)")
+        item_rot_ccw.connect("activate", lambda w: self.canvas.rotate_ccw())
+        menu.append(item_rot_ccw)
+
+        menu.append(Gtk.SeparatorMenuItem())
+
+        item_props = Gtk.MenuItem(label="Image Properties & EXIF (I)")
+        item_props.connect("activate", lambda w: self.show_properties())
+        menu.append(item_props)
+
+        item_del = Gtk.MenuItem(label="Move to Trash (Delete)")
+        item_del.connect("activate", lambda w: self.delete_current_image())
+        menu.append(item_del)
+
+        menu.show_all()
+        menu.popup_at_pointer(event)
 
     def delete_current_image(self) -> None:
         path = self.collection.current_path
@@ -449,7 +503,10 @@ class FeatherViewWindow(Gtk.ApplicationWindow):
 
         # Ctrl combinations
         if ctrl:
-            if key in ("o", "O"):
+            if key in ("b", "B") or (key in ("w", "W") and shift):
+                self.set_as_wallpaper()
+                return True
+            elif key in ("o", "O"):
                 self.open_file_dialog()
                 return True
             elif key in ("s", "S"):

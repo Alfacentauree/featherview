@@ -1,12 +1,144 @@
-"""Dialog windows for image properties, keyboard shortcuts, and confirmations."""
+"""Dialog windows for image properties, keyboard shortcuts, wallpaper settings, and confirmations."""
 
-from typing import Any, Dict
+import os
+from typing import Any, Callable, Dict, Optional
 
 import gi
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk
+gi.require_version("Gdk", "3.0")
+gi.require_version("GdkPixbuf", "2.0")
+from gi.repository import Gdk, GdkPixbuf, Gtk
 
 from . import __app_name__, __version__
+from .loader import create_thumbnail
+from .wallpaper import set_desktop_wallpaper
+
+
+class SetWallpaperDialog(Gtk.Dialog):
+    """Interactive desktop wallpaper configuration dialog."""
+
+    def __init__(
+        self,
+        parent: Gtk.Window,
+        image_path: str,
+        on_applied: Optional[Callable[[bool, str], None]] = None,
+    ):
+        super().__init__(
+            title="Set as Desktop Wallpaper",
+            transient_for=parent,
+            flags=Gtk.DialogFlags.MODAL | Gtk.DialogFlags.DESTROY_WITH_PARENT,
+        )
+        self.image_path = image_path
+        self.on_applied = on_applied
+        self.set_default_size(480, 520)
+
+        # Action Buttons
+        self.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        apply_btn = self.add_button("Apply Wallpaper", Gtk.ResponseType.OK)
+        apply_btn.get_style_context().add_class("suggested-action")
+
+        content = self.get_content_area()
+        content.set_spacing(16)
+        content.set_margin_start(20)
+        content.set_margin_end(20)
+        content.set_margin_top(16)
+        content.set_margin_bottom(16)
+
+        # 1. Image Preview Frame
+        preview_frame = Gtk.Frame()
+        preview_frame.set_shadow_type(Gtk.ShadowType.ETCHED_IN)
+        preview_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        preview_box.set_margin_top(12)
+        preview_box.set_margin_bottom(12)
+        preview_box.set_margin_start(12)
+        preview_box.set_margin_end(12)
+
+        thumb = create_thumbnail(image_path, max_size=200)
+        if thumb:
+            img_widget = Gtk.Image.new_from_pixbuf(thumb)
+        else:
+            img_widget = Gtk.Image.new_from_icon_name("preferences-desktop-wallpaper", Gtk.IconSize.DIALOG)
+        preview_box.pack_start(img_widget, True, True, 0)
+
+        name_lbl = Gtk.Label(label=os.path.basename(image_path))
+        name_lbl.get_style_context().add_class("dim-label")
+        name_lbl.set_ellipsize(3)  # PANGO_ELLIPSIZE_END
+        preview_box.pack_start(name_lbl, False, False, 0)
+
+        preview_frame.add(preview_box)
+        content.pack_start(preview_frame, False, False, 0)
+
+        # 2. Placement Style Selection
+        style_label = Gtk.Label()
+        style_label.set_markup("<b>Placement Style</b>")
+        style_label.set_halign(Gtk.Align.START)
+        content.pack_start(style_label, False, False, 0)
+
+        style_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        style_box.set_margin_start(12)
+
+        self.radio_zoom = Gtk.RadioButton.new_with_label(
+            None, "Zoom / Fill Screen (Crops edges to fill display - Recommended)"
+        )
+        self.radio_scaled = Gtk.RadioButton.new_with_label_from_widget(
+            self.radio_zoom, "Fit to Screen (Preserves entire image with border)"
+        )
+        self.radio_centered = Gtk.RadioButton.new_with_label_from_widget(
+            self.radio_zoom, "Center (Displays original resolution in center)"
+        )
+        self.radio_spanned = Gtk.RadioButton.new_with_label_from_widget(
+            self.radio_zoom, "Span (Stretches across multiple displays)"
+        )
+
+        self.radio_zoom.set_active(True)
+
+        style_box.pack_start(self.radio_zoom, False, False, 0)
+        style_box.pack_start(self.radio_scaled, False, False, 0)
+        style_box.pack_start(self.radio_centered, False, False, 0)
+        style_box.pack_start(self.radio_spanned, False, False, 0)
+        content.pack_start(style_box, False, False, 0)
+
+        # 3. Background Border Color (for Fit and Center modes)
+        color_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        color_box.set_margin_start(12)
+        color_lbl = Gtk.Label(label="Background Border Color:")
+        color_lbl.set_halign(Gtk.Align.START)
+
+        self.color_button = Gtk.ColorButton()
+        black_rgba = Gdk.RGBA(0.0, 0.0, 0.0, 1.0)
+        self.color_button.set_rgba(black_rgba)
+
+        color_box.pack_start(color_lbl, False, False, 0)
+        color_box.pack_start(self.color_button, False, False, 0)
+        content.pack_start(color_box, False, False, 0)
+
+        self.connect("response", self._on_response)
+        self.show_all()
+
+    def _on_response(self, dialog, response_id: int) -> None:
+        if response_id == Gtk.ResponseType.OK:
+            # Determine style
+            if self.radio_zoom.get_active():
+                style = "zoom"
+            elif self.radio_scaled.get_active():
+                style = "scaled"
+            elif self.radio_centered.get_active():
+                style = "centered"
+            else:
+                style = "spanned"
+
+            # Determine background hex color
+            rgba = self.color_button.get_rgba()
+            r = int(rgba.red * 255)
+            g = int(rgba.green * 255)
+            b = int(rgba.blue * 255)
+            hex_color = f"#{r:02x}{g:02x}{b:02x}"
+
+            success, message = set_desktop_wallpaper(self.image_path, style, hex_color)
+            if self.on_applied:
+                self.on_applied(success, message)
+
+        self.destroy()
 
 
 class ImagePropertiesDialog(Gtk.Dialog):
@@ -133,7 +265,9 @@ class ShortcutsDialog(Gtk.Dialog):
             ("T", "Toggle Thumbnail Filmstrip"),
             ("I", "Toggle Image Properties / EXIF"),
         ]),
-        ("File Actions", [
+        ("Wallpaper & Actions", [
+            ("Ctrl + Shift + W / Ctrl + B", "Set as Desktop Wallpaper dialog"),
+            ("Right Click on Image", "Context menu (Set Wallpaper, Copy, etc.)"),
             ("Ctrl + O", "Open image or folder"),
             ("Ctrl + S", "Save / Export image as..."),
             ("Ctrl + C", "Copy image to clipboard"),
@@ -148,7 +282,7 @@ class ShortcutsDialog(Gtk.Dialog):
             transient_for=parent,
             flags=Gtk.DialogFlags.MODAL | Gtk.DialogFlags.DESTROY_WITH_PARENT,
         )
-        self.set_default_size(520, 560)
+        self.set_default_size(540, 580)
         self.add_button("Close", Gtk.ResponseType.CLOSE)
 
         box = self.get_content_area()

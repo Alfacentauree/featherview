@@ -57,6 +57,8 @@ class AppHeaderBar(Gtk.HeaderBar):
         btn_zoom_in = create_icon_btn("zoom-in", "Zoom In (+)", self.actions.get("zoom_in"))
 
         self.pack_end(self._create_menu_button())
+        btn_wallpaper = create_icon_btn("preferences-desktop-wallpaper", "Set as Desktop Wallpaper (Ctrl+Shift+W)", self.actions.get("set_wallpaper"))
+        self.pack_end(btn_wallpaper)
         self.btn_fullscreen = create_icon_btn("view-fullscreen", "Toggle Fullscreen (F11)", self.actions.get("fullscreen"))
         self.pack_end(self.btn_fullscreen)
 
@@ -171,6 +173,9 @@ class FloatingOverlay(Gtk.Box):
         self.pack_start(btn_fit, False, False, 0)
         self.pack_start(btn_out, False, False, 0)
         self.pack_start(btn_in, False, False, 0)
+        self.pack_start(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL), False, False, 4)
+        btn_wallpaper = create_icon_btn("preferences-desktop-wallpaper", "Set as Wallpaper", actions.get("set_wallpaper"))
+        self.pack_start(btn_wallpaper, False, False, 0)
         self.pack_start(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL), False, False, 4)
         self.pack_start(btn_exit, False, False, 0)
 

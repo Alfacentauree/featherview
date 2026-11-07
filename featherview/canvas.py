@@ -51,6 +51,7 @@ class ImageCanvas(Gtk.DrawingArea):
         self.on_next_requested: Optional[Callable[[], None]] = None
         self.on_prev_requested: Optional[Callable[[], None]] = None
         self.on_toggle_fullscreen: Optional[Callable[[], None]] = None
+        self.on_context_menu: Optional[Callable[[Gdk.EventButton], None]] = None
 
         # Event masks
         self.add_events(
@@ -312,6 +313,10 @@ class ImageCanvas(Gtk.DrawingArea):
         elif event.button == 2:  # Middle click
             self.set_fit_auto()
             return True
+        elif event.button == 3:  # Right click
+            if self.on_context_menu:
+                self.on_context_menu(event)
+                return True
         elif event.button == 8 or event.button == 9:  # Mouse back/forward buttons
             if event.button == 8 and self.on_prev_requested:
                 self.on_prev_requested()
