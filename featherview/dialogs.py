@@ -770,8 +770,8 @@ class AboutDialog(Gtk.AboutDialog):
             program_name=__app_name__,
             version=__version__,
             comments="Ultra-lightweight, blazing-fast image viewer for Linux desktop.",
-            website="https://github.com/featherview/featherview",
-            authors=["Senior Software Developer", "Open Source Community"],
+            website="https://github.com/Alfacentauree/featherview",
+            authors=["Alfacentauree", "Open Source Community"],
             license_type=Gtk.License.MIT_X11,
             logo_icon_name="image-x-generic",
         )
