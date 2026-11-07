@@ -15,7 +15,7 @@ from .wallpaper import set_desktop_wallpaper
 
 
 class SetWallpaperDialog(Gtk.Dialog):
-    """Interactive desktop wallpaper configuration dialog."""
+    """Interactive desktop wallpaper configuration dialog with custom Width/Height controls."""
 
     def __init__(
         self,
@@ -30,19 +30,46 @@ class SetWallpaperDialog(Gtk.Dialog):
         )
         self.image_path = image_path
         self.on_applied = on_applied
-        self.set_default_size(480, 520)
+        self.set_default_size(520, 600)
+
+        # Detect original image dimensions
+        self.orig_w, self.orig_h = 1920, 1080
+        try:
+            from PIL import Image
+            with Image.open(image_path) as im:
+                self.orig_w, self.orig_h = im.size
+        except Exception:
+            try:
+                pix = GdkPixbuf.Pixbuf.new_from_file(image_path)
+                self.orig_w, self.orig_h = pix.get_width(), pix.get_height()
+            except Exception:
+                pass
+
+        # Detect display monitor resolution
+        screen = Gdk.Screen.get_default()
+        self.screen_w = screen.get_width() if screen else 1920
+        self.screen_h = screen.get_height() if screen else 1080
+
+        # Aspect ratio for locking
+        self.aspect_ratio = float(self.orig_w) / float(self.orig_h) if self.orig_h > 0 else 1.777
+        self._syncing_dims = False
 
         # Action Buttons
         self.add_button("Cancel", Gtk.ResponseType.CANCEL)
         apply_btn = self.add_button("Apply Wallpaper", Gtk.ResponseType.OK)
         apply_btn.get_style_context().add_class("suggested-action")
 
-        content = self.get_content_area()
-        content.set_spacing(16)
+        # Scrollable container so it fits on any screen height
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.get_content_area().pack_start(scrolled, True, True, 0)
+
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
         content.set_margin_start(20)
         content.set_margin_end(20)
         content.set_margin_top(16)
         content.set_margin_bottom(16)
+        scrolled.add(content)
 
         # 1. Image Preview Frame
         preview_frame = Gtk.Frame()
@@ -53,14 +80,14 @@ class SetWallpaperDialog(Gtk.Dialog):
         preview_box.set_margin_start(12)
         preview_box.set_margin_end(12)
 
-        thumb = create_thumbnail(image_path, max_size=200)
+        thumb = create_thumbnail(image_path, max_size=180)
         if thumb:
             img_widget = Gtk.Image.new_from_pixbuf(thumb)
         else:
             img_widget = Gtk.Image.new_from_icon_name("preferences-desktop-wallpaper", Gtk.IconSize.DIALOG)
         preview_box.pack_start(img_widget, True, True, 0)
 
-        name_lbl = Gtk.Label(label=os.path.basename(image_path))
+        name_lbl = Gtk.Label(label=f"{os.path.basename(image_path)} ({self.orig_w} × {self.orig_h} px)")
         name_lbl.get_style_context().add_class("dim-label")
         name_lbl.set_ellipsize(3)  # PANGO_ELLIPSIZE_END
         preview_box.pack_start(name_lbl, False, False, 0)
@@ -68,7 +95,119 @@ class SetWallpaperDialog(Gtk.Dialog):
         preview_frame.add(preview_box)
         content.pack_start(preview_frame, False, False, 0)
 
-        # 2. Placement Style Selection
+        # 2. Custom Width & Height Controls (with Plus / Minus buttons)
+        dim_label = Gtk.Label()
+        dim_label.set_markup("<b>Wallpaper Resolution (Width × Height)</b>")
+        dim_label.set_halign(Gtk.Align.START)
+        content.pack_start(dim_label, False, False, 0)
+
+        dim_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        dim_container.set_margin_start(8)
+
+        # Width Row
+        box_w = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        lbl_w = Gtk.Label(label="Width (px):")
+        lbl_w.set_size_request(85, -1)
+        lbl_w.set_halign(Gtk.Align.START)
+
+        btn_w_minus_50 = Gtk.Button(label="−50")
+        btn_w_minus_50.get_style_context().add_class("step-btn")
+        btn_w_minus_50.set_tooltip_text("Decrease width by 50 px")
+
+        btn_w_minus_10 = Gtk.Button(label=" − ")
+        btn_w_minus_10.get_style_context().add_class("step-btn")
+        btn_w_minus_10.set_tooltip_text("Decrease width by 10 px")
+
+        self.spin_w = Gtk.SpinButton.new_with_range(100, 10000, 10)
+        self.spin_w.set_value(self.screen_w)
+        self.spin_w.set_numeric(True)
+        self.spin_w.set_width_chars(6)
+
+        btn_w_plus_10 = Gtk.Button(label=" + ")
+        btn_w_plus_10.get_style_context().add_class("step-btn")
+        btn_w_plus_10.set_tooltip_text("Increase width by 10 px")
+
+        btn_w_plus_50 = Gtk.Button(label="+50")
+        btn_w_plus_50.get_style_context().add_class("step-btn")
+        btn_w_plus_50.set_tooltip_text("Increase width by 50 px")
+
+        box_w.pack_start(lbl_w, False, False, 0)
+        box_w.pack_start(btn_w_minus_50, False, False, 0)
+        box_w.pack_start(btn_w_minus_10, False, False, 0)
+        box_w.pack_start(self.spin_w, True, True, 0)
+        box_w.pack_start(btn_w_plus_10, False, False, 0)
+        box_w.pack_start(btn_w_plus_50, False, False, 0)
+        dim_container.pack_start(box_w, False, False, 0)
+
+        # Height Row
+        box_h = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        lbl_h = Gtk.Label(label="Height (px):")
+        lbl_h.set_size_request(85, -1)
+        lbl_h.set_halign(Gtk.Align.START)
+
+        btn_h_minus_50 = Gtk.Button(label="−50")
+        btn_h_minus_50.get_style_context().add_class("step-btn")
+        btn_h_minus_50.set_tooltip_text("Decrease height by 50 px")
+
+        btn_h_minus_10 = Gtk.Button(label=" − ")
+        btn_h_minus_10.get_style_context().add_class("step-btn")
+        btn_h_minus_10.set_tooltip_text("Decrease height by 10 px")
+
+        self.spin_h = Gtk.SpinButton.new_with_range(100, 10000, 10)
+        self.spin_h.set_value(self.screen_h)
+        self.spin_h.set_numeric(True)
+        self.spin_h.set_width_chars(6)
+
+        btn_h_plus_10 = Gtk.Button(label=" + ")
+        btn_h_plus_10.get_style_context().add_class("step-btn")
+        btn_h_plus_10.set_tooltip_text("Increase height by 10 px")
+
+        btn_h_plus_50 = Gtk.Button(label="+50")
+        btn_h_plus_50.get_style_context().add_class("step-btn")
+        btn_h_plus_50.set_tooltip_text("Increase height by 50 px")
+
+        box_h.pack_start(lbl_h, False, False, 0)
+        box_h.pack_start(btn_h_minus_50, False, False, 0)
+        box_h.pack_start(btn_h_minus_10, False, False, 0)
+        box_h.pack_start(self.spin_h, True, True, 0)
+        box_h.pack_start(btn_h_plus_10, False, False, 0)
+        box_h.pack_start(btn_h_plus_50, False, False, 0)
+        dim_container.pack_start(box_h, False, False, 0)
+
+        # Connect button click steppers
+        btn_w_minus_50.connect("clicked", lambda b: self._step_width(-50))
+        btn_w_minus_10.connect("clicked", lambda b: self._step_width(-10))
+        btn_w_plus_10.connect("clicked", lambda b: self._step_width(10))
+        btn_w_plus_50.connect("clicked", lambda b: self._step_width(50))
+
+        btn_h_minus_50.connect("clicked", lambda b: self._step_height(-50))
+        btn_h_minus_10.connect("clicked", lambda b: self._step_height(-10))
+        btn_h_plus_10.connect("clicked", lambda b: self._step_height(10))
+        btn_h_plus_50.connect("clicked", lambda b: self._step_height(50))
+
+        # Aspect ratio lock & Presets
+        options_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.chk_aspect = Gtk.CheckButton(label="🔗 Keep Aspect Ratio")
+        self.chk_aspect.set_active(True)
+        options_box.pack_start(self.chk_aspect, False, False, 0)
+
+        # Quick preset buttons
+        btn_preset_screen = Gtk.Button(label=f"🖥️ Screen ({self.screen_w}×{self.screen_h})")
+        btn_preset_screen.connect("clicked", lambda b: self._set_dimensions(self.screen_w, self.screen_h))
+        options_box.pack_end(btn_preset_screen, False, False, 0)
+
+        btn_preset_orig = Gtk.Button(label=f"🖼️ Original ({self.orig_w}×{self.orig_h})")
+        btn_preset_orig.connect("clicked", lambda b: self._set_dimensions(self.orig_w, self.orig_h))
+        options_box.pack_end(btn_preset_orig, False, False, 0)
+
+        dim_container.pack_start(options_box, False, False, 0)
+        content.pack_start(dim_container, False, False, 0)
+
+        # Connect value-changed listeners for aspect ratio sync
+        self.spin_w.connect("value-changed", self._on_width_changed)
+        self.spin_h.connect("value-changed", self._on_height_changed)
+
+        # 3. Placement Style Selection
         style_label = Gtk.Label()
         style_label.set_markup("<b>Placement Style</b>")
         style_label.set_halign(Gtk.Align.START)
@@ -98,7 +237,7 @@ class SetWallpaperDialog(Gtk.Dialog):
         style_box.pack_start(self.radio_spanned, False, False, 0)
         content.pack_start(style_box, False, False, 0)
 
-        # 3. Background Border Color (for Fit and Center modes)
+        # 4. Background Border Color (for Fit and Center modes)
         color_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         color_box.set_margin_start(12)
         color_lbl = Gtk.Label(label="Background Border Color:")
@@ -114,6 +253,38 @@ class SetWallpaperDialog(Gtk.Dialog):
 
         self.connect("response", self._on_response)
         self.show_all()
+
+    def _step_width(self, delta: int) -> None:
+        val = self.spin_w.get_value()
+        self.spin_w.set_value(max(100, min(10000, val + delta)))
+
+    def _step_height(self, delta: int) -> None:
+        val = self.spin_h.get_value()
+        self.spin_h.set_value(max(100, min(10000, val + delta)))
+
+    def _set_dimensions(self, width: int, height: int) -> None:
+        self._syncing_dims = True
+        self.spin_w.set_value(width)
+        self.spin_h.set_value(height)
+        self._syncing_dims = False
+
+    def _on_width_changed(self, spin: Gtk.SpinButton) -> None:
+        if self._syncing_dims:
+            return
+        if self.chk_aspect.get_active() and self.aspect_ratio > 0:
+            self._syncing_dims = True
+            new_h = int(round(spin.get_value() / self.aspect_ratio))
+            self.spin_h.set_value(max(100, min(10000, new_h)))
+            self._syncing_dims = False
+
+    def _on_height_changed(self, spin: Gtk.SpinButton) -> None:
+        if self._syncing_dims:
+            return
+        if self.chk_aspect.get_active() and self.aspect_ratio > 0:
+            self._syncing_dims = True
+            new_w = int(round(spin.get_value() * self.aspect_ratio))
+            self.spin_w.set_value(max(100, min(10000, new_w)))
+            self._syncing_dims = False
 
     def _on_response(self, dialog, response_id: int) -> None:
         if response_id == Gtk.ResponseType.OK:
@@ -134,7 +305,16 @@ class SetWallpaperDialog(Gtk.Dialog):
             b = int(rgba.blue * 255)
             hex_color = f"#{r:02x}{g:02x}{b:02x}"
 
-            success, message = set_desktop_wallpaper(self.image_path, style, hex_color)
+            # Extract user configured Width and Height
+            target_w = int(self.spin_w.get_value())
+            target_h = int(self.spin_h.get_value())
+
+            success, message = set_desktop_wallpaper(
+                self.image_path,
+                style=style,
+                bg_color=hex_color,
+                custom_size=(target_w, target_h),
+            )
             if self.on_applied:
                 self.on_applied(success, message)
 
@@ -266,7 +446,7 @@ class ShortcutsDialog(Gtk.Dialog):
             ("I", "Toggle Image Properties / EXIF"),
         ]),
         ("Wallpaper & Actions", [
-            ("Ctrl + Shift + W / Ctrl + B", "Set as Desktop Wallpaper dialog"),
+            ("Ctrl + Shift + W / Ctrl + B", "Set as Desktop Wallpaper (with custom +/- Width & Height)"),
             ("Right Click on Image", "Context menu (Set Wallpaper, Copy, etc.)"),
             ("Ctrl + O", "Open image or folder"),
             ("Ctrl + S", "Save / Export image as..."),

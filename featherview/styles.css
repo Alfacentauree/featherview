@@ -97,3 +97,34 @@ headerbar .subtitle {
     font-weight: 600;
     color: #93c5fd;
 }
+
+/* Custom Plus / Minus stepper buttons */
+.step-btn {
+    font-weight: bold;
+    font-size: 14px;
+    min-width: 36px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background-color: #27272a;
+    color: #38bdf8;
+    border: 1px solid #3f3f46;
+}
+
+.step-btn:hover {
+    background-color: #3f3f46;
+    color: #ffffff;
+}
+
+.step-btn:active {
+    background-color: #2563eb;
+    color: #ffffff;
+}
+
+.dim-badge {
+    background-color: #27272a;
+    border-radius: 8px;
+    padding: 2px 8px;
+    font-weight: 600;
+    font-size: 12px;
+    color: #38bdf8;
+}
